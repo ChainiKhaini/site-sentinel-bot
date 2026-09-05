@@ -2,7 +2,7 @@
  * SiteSentinel Web Status Dashboard
  */
 
-import { formatIST } from "./config.js";
+import { formatIST, escapeHtml } from "./config.js";
 
 export function renderDashboardHtml(sites = [], workerColo = "DEL") {
   const total = sites.length;
@@ -454,12 +454,3 @@ export function renderDashboardHtml(sites = [], workerColo = "DEL") {
 </html>`;
 }
 
-function escapeHtml(str) {
-  if (!str) return "";
-  return String(str)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#039;");
-}

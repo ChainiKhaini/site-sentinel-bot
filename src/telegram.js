@@ -2,18 +2,9 @@
  * SiteSentinel Telegram UI & Bot API Wrapper
  */
 
-import { formatIST, formatDuration } from "./config.js";
+import { formatIST, formatDuration, escapeHtml } from "./config.js";
+export { escapeHtml };
 
-/**
- * Escape HTML special characters for Telegram HTML mode
- */
-export function escapeHtml(str) {
-  if (!str) return "";
-  return String(str)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
-}
 
 /**
  * Send a message via Telegram Bot API

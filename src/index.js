@@ -456,7 +456,13 @@ async function handleTelegramUpdate(update, env, ctx, workerColo) {
   await sendTelegramMessage(botToken, chatId, `❓ Unknown command: <code>${escapeHtml(command)}</code>\nUse <code>/help</code> for available commands.`);
 }
 
-// ─── Worker Default Export ──────────────────────────────────
+function isAuthorizedAdmin(request, env) {
+  if (!env.ADMIN_TOKEN) return true;
+  const url = new URL(request.url);
+  const tokenParam = url.searchParams.get("token") || url.searchParams.get("key");
+  const authHeader = request.headers.get("x-admin-token") || request.headers.get("authorization")?.replace(/^Bearer\s+/i, "");
+  return tokenParam === env.ADMIN_TOKEN || authHeader === env.ADMIN_TOKEN;
+}
 
 export default {
   /**
@@ -508,6 +514,13 @@ export default {
 
     // 2. Webhook Setup Helper
     if (url.pathname === "/setup-webhook") {
+      if (!isAuthorizedAdmin(request, env)) {
+        return new Response(JSON.stringify({ error: "Unauthorized: Invalid or missing admin token" }), {
+          status: 401,
+          headers: { "Content-Type": "application/json" }
+        });
+      }
+
       const webhookUrl = `${url.origin}/webhook`;
       const secret = env.TELEGRAM_WEBHOOK_SECRET || "";
       const botToken = env.TELEGRAM_BOT_TOKEN;
@@ -527,6 +540,13 @@ export default {
 
     // 3. Manual Cron Trigger
     if (url.pathname === "/trigger-cron") {
+      if (!isAuthorizedAdmin(request, env)) {
+        return new Response(JSON.stringify({ error: "Unauthorized: Invalid or missing admin token" }), {
+          status: 401,
+          headers: { "Content-Type": "application/json" }
+        });
+      }
+
       const summary = await performScheduledMonitoring(env, ctx, { workerColo });
       return new Response(JSON.stringify({ status: "Executed", summary }, null, 2), {
         headers: { "Content-Type": "application/json" }
@@ -535,6 +555,13 @@ export default {
 
     // 4. Instant On-Demand JSON Check API: /check?url=https://example.com
     if (url.pathname === "/check") {
+      if (!isAuthorizedAdmin(request, env)) {
+        return new Response(JSON.stringify({ error: "Unauthorized: Invalid or missing admin token" }), {
+          status: 401,
+          headers: { "Content-Type": "application/json" }
+        });
+      }
+
       const targetUrl = url.searchParams.get("url");
       if (!targetUrl) {
         return new Response(JSON.stringify({ error: "Missing 'url' query parameter" }), {

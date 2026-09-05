@@ -1,4 +1,4 @@
-﻿{
+{
   "name": "site-sentinel-bot",
   "version": "1.0.0",
   "description": "Multi-website uptime monitor Telegram bot on Cloudflare Workers with Indian edge intelligence",
@@ -16,7 +16,7 @@
     "cloudflare-workers",
     "india"
   ],
-  "author": "Geon",
+  "author": "ChainiKhaini",
   "license": "MIT",
   "devDependencies": {
     "wrangler": "^3.114.17"

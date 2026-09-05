@@ -57,11 +57,13 @@ export async function performScheduledMonitoring(env, ctx, options = {}) {
         });
 
         const prevStatus = site.status;
-        const record = await recordCheckResult(kv, site.id, checkResult);
+        const willAlertDown = !checkResult.isUp && (prevStatus === "UP" || prevStatus === "PENDING");
+        const extraPatch = willAlertDown ? { lastAlertSent: new Date().toISOString() } : {};
+        const record = await recordCheckResult(kv, site.id, checkResult, extraPatch);
         const updatedSite = record.site;
 
         // Transition 1: UP -> DOWN (or initial PENDING -> DOWN) — STATUS CHANGED
-        if (!checkResult.isUp && (prevStatus === "UP" || prevStatus === "PENDING")) {
+        if (willAlertDown) {
           console.warn(`[ALERT] Site ${site.url} went DOWN (status changed from ${prevStatus}): ${checkResult.error}`);
           if (botToken && chatId) {
             const alertText = buildDowntimeAlertMessage(updatedSite, checkResult);
@@ -69,8 +71,6 @@ export async function performScheduledMonitoring(env, ctx, options = {}) {
             await sendTelegramMessage(botToken, chatId, alertText, {
               reply_markup: { inline_keyboard: keyboard }
             });
-            // Record timestamp of this alert
-            await updateSite(kv, site.id, { lastAlertSent: new Date().toISOString() });
           }
           return { site: updatedSite, checkResult, stateChange: "NEWLY_DOWN" };
         }

@@ -48,25 +48,59 @@ export function generateSiteId(url) {
     const parsed = new URL(url);
     const hostPart = parsed.hostname.replace(/[^a-zA-Z0-9]/g, "_").toLowerCase();
     const pathPart = parsed.pathname.replace(/[^a-zA-Z0-9]/g, "_").slice(0, 10);
-    const hash = Math.abs(
-      url.split("").reduce((acc, char) => (acc << 5) - acc + char.charCodeAt(0), 0)
-    ).toString(36).slice(0, 6);
-    return `${hostPart}_${pathPart ? pathPart + "_" : ""}${hash}`.replace(/_+/g, "_").replace(/^_|_$/g, "");
+    let hash = 5381;
+    for (let i = 0; i < url.length; i++) {
+      hash = ((hash << 5) + hash) + url.charCodeAt(i);
+      hash = hash & hash;
+    }
+    const hexHash = Math.abs(hash).toString(36).padStart(6, "0").slice(0, 6);
+    return `${hostPart}_${pathPart ? pathPart + "_" : ""}${hexHash}`.replace(/_+/g, "_").replace(/^_|_$/g, "");
   } catch (e) {
     return `site_${Date.now().toString(36)}`;
   }
 }
 
 /**
- * Retrieve all monitored websites
+ * Retrieve a single site by ID from KV
+ */
+export async function getSite(kv, siteId) {
+  if (!kv || !siteId) return null;
+  try {
+    return await kv.get(`site:${siteId}`, { type: "json" });
+  } catch (e) {
+    return null;
+  }
+}
+
+/**
+ * Retrieve all monitored websites (with automatic schema migration)
  */
 export async function getAllSites(kv) {
   if (!kv) return [];
   try {
-    const data = await kv.get(SITES_KEY, { type: "json" });
-    return Array.isArray(data) ? data : [];
+    const indexData = await kv.get(SITES_KEY, { type: "json" });
+    if (!indexData || !Array.isArray(indexData)) return [];
+
+    // Auto-migration: If index contains site objects instead of IDs (legacy format)
+    if (indexData.length > 0 && typeof indexData[0] === "object" && indexData[0].id) {
+      console.log(`[MIGRATION] Migrating ${indexData.length} sites from legacy monolithic blob to per-site KV keys...`);
+      const idList = [];
+      for (const oldSite of indexData) {
+        if (oldSite && oldSite.id) {
+          idList.push(oldSite.id);
+          await kv.put(`site:${oldSite.id}`, JSON.stringify(oldSite));
+        }
+      }
+      await kv.put(SITES_KEY, JSON.stringify(idList));
+      return indexData;
+    }
+
+    // Modern format: indexData is string[] of site IDs
+    const sitePromises = indexData.map(id => kv.get(`site:${id}`, { type: "json" }));
+    const sites = await Promise.all(sitePromises);
+    return sites.filter(Boolean);
   } catch (err) {
-    console.error("Error reading sites index from KV:", err);
+    console.error("Error reading sites from KV:", err);
     return [];
   }
 }
@@ -75,9 +109,15 @@ export async function getAllSites(kv) {
  * Find a site by ID or URL
  */
 export async function findSite(kv, idOrUrl) {
-  const sites = await getAllSites(kv);
-  if (!idOrUrl) return null;
+  if (!kv || !idOrUrl) return null;
   const target = idOrUrl.trim().toLowerCase();
+
+  // Try direct site:<id> lookup
+  const direct = await getSite(kv, target);
+  if (direct) return direct;
+
+  // Fallback to checking URL match across sites
+  const sites = await getAllSites(kv);
   return sites.find(s => 
     s.id.toLowerCase() === target ||
     s.url.toLowerCase() === target ||
@@ -115,6 +155,7 @@ export async function addSite(kv, { url, name, checkIntervalMins = DEFAULTS.CHEC
     lastChecked: null,
     lastStatusChange: null,
     downtimeStart: null,
+    lastAlertSent: null,
     failureCount: 0,
     successCount: 0,
     totalChecks: 0,
@@ -126,8 +167,20 @@ export async function addSite(kv, { url, name, checkIntervalMins = DEFAULTS.CHEC
     lastColoName: null
   };
 
-  sites.push(newSite);
-  await kv.put(SITES_KEY, JSON.stringify(sites));
+  // 1. Write individual site key
+  await kv.put(`site:${id}`, JSON.stringify(newSite));
+
+  // 2. Append ID to sites_index
+  const indexData = (await kv.get(SITES_KEY, { type: "json" })) || [];
+  const idList = Array.isArray(indexData)
+    ? (typeof indexData[0] === "object" ? indexData.map(s => s.id) : indexData)
+    : [];
+
+  if (!idList.includes(id)) {
+    idList.push(id);
+    await kv.put(SITES_KEY, JSON.stringify(idList));
+  }
+
   return newSite;
 }
 
@@ -135,19 +188,27 @@ export async function addSite(kv, { url, name, checkIntervalMins = DEFAULTS.CHEC
  * Remove a website from monitoring
  */
 export async function removeSite(kv, idOrUrl) {
-  const sites = await getAllSites(kv);
   const siteToRemove = await findSite(kv, idOrUrl);
   if (!siteToRemove) {
     return { success: false, message: `Site "${idOrUrl}" not found.` };
   }
 
-  const updatedSites = sites.filter(s => s.id !== siteToRemove.id);
-  await kv.put(SITES_KEY, JSON.stringify(updatedSites));
-  
-  // Clean up history key asynchronously
+  // 1. Delete individual site key
+  await kv.delete(`site:${siteToRemove.id}`);
+
+  // 2. Clean up history key
   try {
     await kv.delete(`history:${siteToRemove.id}`);
   } catch (e) {}
+
+  // 3. Remove ID from sites_index
+  const indexData = (await kv.get(SITES_KEY, { type: "json" })) || [];
+  const idList = Array.isArray(indexData)
+    ? (typeof indexData[0] === "object" ? indexData.map(s => s.id) : indexData)
+    : [];
+
+  const updatedIds = idList.filter(id => id !== siteToRemove.id);
+  await kv.put(SITES_KEY, JSON.stringify(updatedIds));
 
   return { success: true, site: siteToRemove };
 }
@@ -156,14 +217,13 @@ export async function removeSite(kv, idOrUrl) {
  * Toggle pause status for a site
  */
 export async function setSitePaused(kv, idOrUrl, paused) {
-  const sites = await getAllSites(kv);
-  const site = sites.find(s => s.id === idOrUrl || s.url === idOrUrl);
+  const site = await findSite(kv, idOrUrl);
   if (!site) {
     return { success: false, message: `Site "${idOrUrl}" not found.` };
   }
 
   site.paused = Boolean(paused);
-  await kv.put(SITES_KEY, JSON.stringify(sites));
+  await kv.put(`site:${site.id}`, JSON.stringify(site));
   return { success: true, site };
 }
 
@@ -171,13 +231,12 @@ export async function setSitePaused(kv, idOrUrl, paused) {
  * Update multiple fields on a site
  */
 export async function updateSite(kv, siteId, patch) {
-  const sites = await getAllSites(kv);
-  const index = sites.findIndex(s => s.id === siteId);
-  if (index === -1) return null;
+  const site = await getSite(kv, siteId);
+  if (!site) return null;
 
-  sites[index] = { ...sites[index], ...patch };
-  await kv.put(SITES_KEY, JSON.stringify(sites));
-  return sites[index];
+  const updated = { ...site, ...patch };
+  await kv.put(`site:${siteId}`, JSON.stringify(updated));
+  return updated;
 }
 
 /**
@@ -195,19 +254,18 @@ export async function updateSiteInterval(kv, idOrUrl, intervalMins) {
 }
 
 /**
- * Record a check result, calculate transitions, and update history
+ * Record a check result, calculate transitions, and update history.
+ * Modifies ONLY site:<siteId> and history:<siteId>, ensuring zero concurrent write collisions.
  */
-export async function recordCheckResult(kv, siteId, result) {
-  const sites = await getAllSites(kv);
-  const index = sites.findIndex(s => s.id === siteId);
-  if (index === -1) return null;
+export async function recordCheckResult(kv, siteId, result, extraPatch = {}) {
+  const site = await getSite(kv, siteId);
+  if (!site) return null;
 
-  const site = sites[index];
   const nowIso = new Date().toISOString();
   const prevStatus = site.status;
   const isUp = result.isUp;
   const newStatus = isUp ? "UP" : "DOWN";
-  const statusChanged = prevStatus !== newStatus;
+  const statusChanged = prevStatus !== "PENDING" && prevStatus !== newStatus;
 
   site.totalChecks = (site.totalChecks || 0) + 1;
   if (isUp) {
@@ -235,8 +293,13 @@ export async function recordCheckResult(kv, siteId, result) {
   site.lastColo = result.colo || null;
   site.lastColoName = result.coloName || null;
 
-  sites[index] = site;
-  await kv.put(SITES_KEY, JSON.stringify(sites));
+  // Apply extra fields (like lastAlertSent) in this exact single write
+  if (extraPatch && typeof extraPatch === "object") {
+    Object.assign(site, extraPatch);
+  }
+
+  // Write ONLY to individual site key
+  await kv.put(`site:${siteId}`, JSON.stringify(site));
 
   // Append to rolling history (max 20 entries)
   try {
