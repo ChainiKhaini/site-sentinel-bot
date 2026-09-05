@@ -3,14 +3,10 @@ main = "src/index.js"
 compatibility_date = "2024-12-01"
 workers_dev = true
 
-# ─── Scheduled Monitoring Trigger ─────────────────────────────
-# Cloudflare Workers Free tier has an account-wide limit of 5 cron triggers across all workers.
-# If your account has free cron slots, uncomment the block below:
-# [triggers]
-# crons = ["*/5 * * * *"]
-#
-# Otherwise, trigger checks via an external pinger (cron-job.org) hitting:
-# https://site-sentinel-bot.saini-gaurav2907.workers.dev/trigger-cron?token=<ADMIN_TOKEN>
+# ─── Scheduled Monitoring Trigger (Every 5 minutes) ───────────
+[triggers]
+crons = ["*/5 * * * *"]
+
 
 
 
