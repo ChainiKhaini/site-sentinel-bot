@@ -1,0 +1,23 @@
+name = "site-sentinel-bot"
+main = "src/index.js"
+compatibility_date = "2024-12-01"
+workers_dev = true
+
+# ─── KV Namespace Binding ───────────────────────────────────
+[[kv_namespaces]]
+binding = "SITE_SENTINEL_STORE"
+id = "4f5f23b2ee8249bda5951ffb8e037b84"
+
+# ─── Smart Placement ────────────────────────────────────────
+[placement]
+mode = "smart"
+
+# ─── Environment Variables (Non-secret) ─────────────────────
+[vars]
+TIMEZONE = "Asia/Kolkata"
+DEFAULT_TIMEOUT_MS = "10000"
+CHECK_INTERVAL_MINS = "15"
+ALERT_REPEAT_INTERVAL_HOURS = "0"
+NOTIFY_ON_STATUS_CHANGE_ONLY = "true"
+MAX_RETRIES = "2"
+DEFAULT_USER_AGENT = "SiteSentinel/1.0 (UptimeMonitor; +https://t.me/SiteSentinalBot)"

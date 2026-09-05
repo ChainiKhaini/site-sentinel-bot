@@ -1,0 +1,4 @@
+﻿TELEGRAM_BOT_TOKEN="your_bot_token_here"
+TELEGRAM_CHAT_ID="your_telegram_chat_id_here"
+TELEGRAM_WEBHOOK_SECRET="your_custom_webhook_secret_here"
+ADMIN_TOKEN="your_custom_admin_token_here"

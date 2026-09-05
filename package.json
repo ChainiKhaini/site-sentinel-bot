@@ -1,0 +1,24 @@
+﻿{
+  "name": "site-sentinel-bot",
+  "version": "1.0.0",
+  "description": "Multi-website uptime monitor Telegram bot on Cloudflare Workers with Indian edge intelligence",
+  "main": "src/index.js",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "test": "node --test tests/*.test.js"
+  },
+  "keywords": [
+    "uptime",
+    "monitor",
+    "telegram-bot",
+    "cloudflare-workers",
+    "india"
+  ],
+  "author": "Geon",
+  "license": "MIT",
+  "devDependencies": {
+    "wrangler": "^3.114.17"
+  }
+}
