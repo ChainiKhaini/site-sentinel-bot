@@ -167,6 +167,39 @@ export function detectContentIssues(title = "", htmlSnippet = "") {
     }
   }
 
+  // 6. 404 Not Found Banners / Error Pages (including Apache Tomcat / IIS / Nginx error reports)
+  const notFoundTitles = [
+    "http status 404",
+    "404 not found",
+    "404 - not found",
+    "404 — not found",
+    "page not found",
+    "resource not found",
+    "object not found",
+    "404 error"
+  ];
+  for (const nft of notFoundTitles) {
+    if (cleanTitle.includes(nft)) {
+      return {
+        isUp: false,
+        category: "NOT_FOUND",
+        label: "DOWN / NOT FOUND (404 Page)",
+        error: "HTTP 404 Not Found (Page or application does not exist)",
+        note: "404 Not Found page banner detected in response."
+      };
+    }
+  }
+
+  if (lowerSnippet.includes("http status 404") && lowerSnippet.includes("apache tomcat")) {
+    return {
+      isUp: false,
+      category: "NOT_FOUND",
+      label: "DOWN / NOT FOUND (Tomcat 404)",
+      error: "HTTP 404 Not Found (Apache Tomcat: Resource does not exist)",
+      note: "Apache Tomcat 404 status report detected in response body."
+    };
+  }
+
   return null;
 }
 
@@ -188,13 +221,22 @@ export function categorizeStatus(statusCode) {
       note: `Server is active and responding (HTTP ${statusCode}). Anti-bot or auth challenge detected.`
     };
   }
-  // 404 and other 4xx client errors
+  // 404 Not Found & 410 Gone: Target page or application is down/missing
+  if (statusCode === 404 || statusCode === 410) {
+    return {
+      isUp: false,
+      category: "NOT_FOUND",
+      label: `DOWN / NOT FOUND (HTTP ${statusCode})`,
+      error: `HTTP ${statusCode} Not Found (Page or application does not exist)`
+    };
+  }
+  // Other 4xx client errors (400, 405, 408, 422, etc.)
   if (statusCode >= 400 && statusCode < 500) {
     return {
-      isUp: true,
+      isUp: false,
       category: "CLIENT_ERROR",
-      label: `ONLINE (HTTP ${statusCode})`,
-      error: `HTTP ${statusCode} (Resource Not Found / Client Error)`
+      label: `DOWN / CLIENT ERROR (HTTP ${statusCode})`,
+      error: `HTTP ${statusCode} (Client Error / Inaccessible)`
     };
   }
   // 5xx server errors

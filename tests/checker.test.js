@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { normalizeUrl, generateSiteId, addSite, recordCheckResult, getSettings, getAllSites, getSite, setSitePaused } from "../src/store.js";
-import { extractColoFromRay, extractHtmlTitle, checkWebsite, detectContentIssues } from "../src/checker.js";
+import { extractColoFromRay, extractHtmlTitle, checkWebsite, detectContentIssues, categorizeStatus } from "../src/checker.js";
 import { isIndianColo, getColoDisplayName, formatDuration, escapeHtml } from "../src/config.js";
 
 test("normalizeUrl handles various inputs", () => {
@@ -212,5 +212,43 @@ test("getSettings defaults to onlyNotifyOnStatusChange: true and alertRepeatHour
   assert.equal(settings.onlyNotifyOnStatusChange, true);
   assert.equal(settings.alertRepeatHours, 0);
 });
+
+test("categorizeStatus accurately flags 404, 410, and 5xx as DOWN, and 200/429 as UP", () => {
+  assert.equal(categorizeStatus(200).isUp, true);
+  assert.equal(categorizeStatus(429).isUp, true); // Rate limited / Bot shield
+  assert.equal(categorizeStatus(404).isUp, false); // Not Found
+  assert.equal(categorizeStatus(404).category, "NOT_FOUND");
+  assert.equal(categorizeStatus(410).isUp, false); // Gone
+  assert.equal(categorizeStatus(400).isUp, false); // Bad Request
+  assert.equal(categorizeStatus(500).isUp, false); // Server Error
+  assert.equal(categorizeStatus(502).isUp, false); // Bad Gateway
+});
+
+test("detectContentIssues catches Apache Tomcat 404 error page", () => {
+  const title = "HTTP Status 404 – Not Found";
+  const body = "<h1>HTTP Status 404 – Not Found</h1><p>Type Status Report</p><p>Description The origin server did not find a current representation for the target resource</p><h3>Apache Tomcat/9.0.41</h3>";
+  const issue = detectContentIssues(title, body);
+  assert.ok(issue);
+  assert.equal(issue.isUp, false);
+  assert.equal(issue.category, "NOT_FOUND");
+});
+
+test("checkWebsite flags 404 Not Found response as DOWN", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response("<html><head><title>HTTP Status 404 – Not Found</title></head><body>Apache Tomcat/9.0.41</body></html>", {
+    status: 404,
+    headers: { "Content-Type": "text/html", "cf-ray": "8db474f88b022e3c-DEL" }
+  });
+  try {
+    const res = await checkWebsite("https://dtcpass.delhi.gov.in/apply", { timeoutMs: 1000, maxRetries: 0 });
+    assert.equal(res.isUp, false);
+    assert.equal(res.statusCode, 404);
+    assert.equal(res.category, "NOT_FOUND");
+    assert.ok(res.statusLabel.includes("NOT FOUND"));
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 
 

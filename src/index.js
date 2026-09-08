@@ -547,7 +547,8 @@ export default {
         });
       }
 
-      const summary = await performScheduledMonitoring(env, ctx, { workerColo });
+      const force = url.searchParams.get("force") === "true";
+      const summary = await performScheduledMonitoring(env, ctx, { workerColo, force });
       return new Response(JSON.stringify({ status: "Executed", summary }, null, 2), {
         headers: { "Content-Type": "application/json" }
       });
