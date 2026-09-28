@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import { normalizeUrl, generateSiteId, addSite, recordCheckResult, getSettings, getAllSites, getSite, setSitePaused } from "../src/store.js";
 import { extractColoFromRay, extractHtmlTitle, checkWebsite, detectContentIssues, categorizeStatus } from "../src/checker.js";
 import { isIndianColo, getColoDisplayName, formatDuration, escapeHtml } from "../src/config.js";
+import { renderDashboardHtml } from "../src/dashboard.js";
 
 test("normalizeUrl handles various inputs", () => {
   assert.equal(normalizeUrl("google.com"), "https://google.com");
@@ -248,6 +249,34 @@ test("checkWebsite flags 404 Not Found response as DOWN", async () => {
   } finally {
     globalThis.fetch = originalFetch;
   }
+});
+
+test("renderDashboardHtml correctly formats downtime, failure count, and status badges", () => {
+  const mockSites = [
+    {
+      id: "dtcpass_test",
+      url: "https://dtcpass.delhi.gov.in/apply",
+      name: "dtcpass.delhi.gov.in",
+      status: "DOWN",
+      paused: false,
+      checkIntervalMins: 60,
+      lastStatusCode: 404,
+      lastError: "HTTP 404 Not Found",
+      downtimeStart: new Date(Date.now() - 3600000).toISOString(),
+      failureCount: 12,
+      totalChecks: 20,
+      uptimeChecks: 8,
+      lastLatency: 120,
+      lastColo: "DEL"
+    }
+  ];
+
+  const html = renderDashboardHtml(mockSites, "DEL");
+  assert.ok(html.includes("OFFLINE (HTTP 404)"));
+  assert.ok(html.includes("OUTAGE ACTIVE"));
+  assert.ok(html.includes("12 consecutive failures"));
+  assert.ok(html.includes("HTTP 404 Not Found"));
+  assert.ok(html.includes("dtcpass.delhi.gov.in"));
 });
 
 
